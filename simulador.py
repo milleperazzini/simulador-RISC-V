@@ -137,7 +137,7 @@ def decodificar(instr):
     elif op == "la":  # la rd, symbol -> simplificado como nop (precisa mais implementação)
         return {"tipo": "NOP", "op": "nop"}
     elif op == "ecall":
-        return {"tipo": "NOP", "op": "nop"}
+        return {"tipo": "SYS", "op": "ecall"}
     else:
         return {"tipo": "NOP", "op": "nop"}
 
