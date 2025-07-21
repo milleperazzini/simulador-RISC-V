@@ -85,56 +85,60 @@ def reg_to_num(reg):
         raise ValueError(f"Registrador desconhecido: {reg}")
 
 def decodificar(instr):
+    if not instr:  # Se for None ou string vazia
+        return {"tipo": "NOP", "op": "nop"}
+
     tokens = instr.replace(",", "").replace("(", " ").replace(")", "").split()
+    if not tokens:  # Se a linha se tornou vazia após replace/split
+        return {"tipo": "NOP", "op": "nop"}
+
     op = tokens[0]
-    try:
-        if op in ["add", "sub", "mul", "div", "rem", "xor", "and", "or", "sll", "srl"]:
-            return {"tipo": "R", "op": op, "rd": int(tokens[1][1:]), "rs1": int(tokens[2][1:]), "rs2": int(tokens[3][1:])}
-        elif op in ["addi", "jalr"]:
-            return {"tipo": "I", "op": op, "rd": int(tokens[1][1:]), "rs1": int(tokens[2][1:]), "imm": int(tokens[3])}
-        elif op == "lw":
-            return {"tipo": "I", "op": op, "rd": int(tokens[1][1:]), "imm": int(tokens[2]), "rs1": int(tokens[3][1:])}
-        elif op == "sw":
-            return {"tipo": "S", "op": op, "rs2": int(tokens[1][1:]), "imm": int(tokens[2]), "rs1": int(tokens[3][1:])}
-        elif op == "li":  # li rd, imm -> addi rd, x0, imm
-            return {
-                "tipo": "I",
-                "op": "addi",
-                "rd": reg_to_num(tokens[1]),
-                "rs1": 0,
-                "imm": int(tokens[2])
-            }
-        elif op == "mv":  # mv rd, rs -> addi rd, rs, 0
-            return {
-                "tipo": "I",
-                "op": "addi",
-                "rd": reg_to_num(tokens[1]),
-                "rs1": reg_to_num(tokens[2]),
-                "imm": 0
-            }
-        elif op == "nop":  # nop -> addi x0, x0, 0
-            return {
-                "tipo": "I",
-                "op": "addi",
-                "rd": 0,
-                "rs1": 0,
-                "imm": 0
-            }
-        elif op == "ret":  # ret -> jalr x0, x1, 0
-            return {
-                "tipo": "I",
-                "op": "jalr",
-                "rd": 0,
-                "rs1": 1,
-                "imm": 0
-            }
-        elif op == "la":  # la rd, symbol -> simplificado como nop (precisa mais implementação)
-            return {"tipo": "NOP", "op": "nop"}
-        elif op == "ecall":
-            return {"tipo": "NOP", "op": "nop"}
-        else:
-            return {"tipo": "NOP", "op": "nop"}
-    except:
+
+    if op in ["add", "sub", "mul", "div", "rem", "xor", "and", "or", "sll", "srl"]:
+        return {"tipo": "R", "op": op, "rd": int(tokens[1][1:]), "rs1": int(tokens[2][1:]), "rs2": int(tokens[3][1:])}
+    elif op in ["addi", "jalr"]:
+        return {"tipo": "I", "op": op, "rd": int(tokens[1][1:]), "rs1": int(tokens[2][1:]), "imm": int(tokens[3])}
+    elif op == "lw":
+        return {"tipo": "I", "op": op, "rd": int(tokens[1][1:]), "imm": int(tokens[2]), "rs1": int(tokens[3][1:])}
+    elif op == "sw":
+        return {"tipo": "S", "op": op, "rs2": int(tokens[1][1:]), "imm": int(tokens[2]), "rs1": int(tokens[3][1:])}
+    elif op == "li":  # li rd, imm -> addi rd, x0, imm
+        return {
+            "tipo": "I",
+            "op": "addi",
+            "rd": reg_to_num(tokens[1]),
+            "rs1": 0,
+            "imm": int(tokens[2])
+        }
+    elif op == "mv":  # mv rd, rs -> addi rd, rs, 0
+        return {
+            "tipo": "I",
+            "op": "addi",
+            "rd": reg_to_num(tokens[1]),
+            "rs1": reg_to_num(tokens[2]),
+            "imm": 0
+        }
+    elif op == "nop":  # nop -> addi x0, x0, 0
+        return {
+            "tipo": "I",
+            "op": "addi",
+            "rd": 0,
+            "rs1": 0,
+            "imm": 0
+        }
+    elif op == "ret":  # ret -> jalr x0, x1, 0
+        return {
+            "tipo": "I",
+            "op": "jalr",
+            "rd": 0,
+            "rs1": 1,
+            "imm": 0
+        }
+    elif op == "la":  # la rd, symbol -> simplificado como nop (precisa mais implementação)
+        return {"tipo": "NOP", "op": "nop"}
+    elif op == "ecall":
+        return {"tipo": "NOP", "op": "nop"}
+    else:
         return {"tipo": "NOP", "op": "nop"}
 
 def executar_instrucao(instr):
@@ -146,32 +150,52 @@ def executar_instrucao(instr):
 
     if info["tipo"] == "R":
         rd, rs1, rs2 = info["rd"], info["rs1"], info["rs2"]
-        if op == "add": R[rd] = R[rs1] + R[rs2]
-        elif op == "sub": R[rd] = R[rs1] - R[rs2]
-        elif op == "mul": R[rd] = R[rs1] * R[rs2]
-        elif op == "div": R[rd] = R[rs1] // R[rs2] if R[rs2] != 0 else 0
-        elif op == "rem": R[rd] = R[rs1] % R[rs2] if R[rs2] != 0 else 0
-        elif op == "xor": R[rd] = R[rs1] ^ R[rs2]
-        elif op == "and": R[rd] = R[rs1] & R[rs2]
-        elif op == "or":  R[rd] = R[rs1] | R[rs2]
-        elif op == "sll": R[rd] = R[rs1] << R[rs2]
-        elif op == "srl": R[rd] = R[rs1] >> R[rs2]
+        if op == "add":
+            R[rd] = R[rs1] + R[rs2]
+        elif op == "sub":
+            R[rd] = R[rs1] - R[rs2]
+        elif op == "mul":
+            R[rd] = R[rs1] * R[rs2]
+        elif op == "div":
+            R[rd] = R[rs1] // R[rs2] if R[rs2] != 0 else 0
+        elif op == "rem":
+            R[rd] = R[rs1] % R[rs2] if R[rs2] != 0 else 0
+        elif op == "xor":
+            R[rd] = R[rs1] ^ R[rs2]
+        elif op == "and":
+            R[rd] = R[rs1] & R[rs2]
+        elif op == "or":
+            R[rd] = R[rs1] | R[rs2]
+        elif op == "sll":
+            R[rd] = R[rs1] << R[rs2]
+        elif op == "srl":
+            R[rd] = R[rs1] >> R[rs2]
 
     elif info["tipo"] == "I":
         rd, rs1, imm = info["rd"], info["rs1"], info["imm"]
-        if op == "addi": R[rd] = R[rs1] + imm
+        if op == "addi":
+            R[rd] = R[rs1] + imm
         elif op == "lw":
             addr = R[rs1] + imm
-            R[rd] = int.from_bytes(M[addr:addr+4], "little")
+            R[rd] = int.from_bytes(M[addr:addr + 4], "little")
         elif op == "jalr":
             R[rd] = pc
 
     elif info["tipo"] == "S":
         addr = R[info["rs1"]] + info["imm"]
         val = R[info["rs2"]]
-        M[addr:addr+4] = val.to_bytes(4, "little")
+        M[addr:addr + 4] = val.to_bytes(4, "little")
 
-    R[0] = 0
+    # tratamento de ecalls
+    if op == "ecall":
+        syscall = R[17]  # registrador a7
+        if syscall == 5:  # read integer
+            val = int(input("🏷️ Digite um inteiro: "))
+            R[10] = val  # coloca em a0
+        elif syscall == 1:  # write integer
+            print(f">>> output: {R[10]}")
+
+    R[0] = 0  # zero sempre 0
 
 def atualizar_pipeline_visual():
     IF.delete(0, tk.END)
@@ -191,6 +215,19 @@ def atualizar_pipeline_visual():
     if pipeline[4] is not None:
         WB.insert(tk.END, pipeline[4])
 
+def atualizar_registradores_visual():
+    registers.delete(0, tk.END)
+    for i in range(32):
+        registers.insert(tk.END, f"x{i:02d}: {R[i]}")
+
+def atualizar_memoria_visual():
+    memory.delete(0, tk.END)
+    for i in range(0, len(M), 4):
+        word_bytes = M[i:i+4]
+        if len(word_bytes) == 4:
+            word_value = int.from_bytes(word_bytes, "little")
+            memory.insert(tk.END, f"0x{i:03X}: 0x{word_value:08X}")
+
 def escrever_saida():
     with open("saida.out", "a", encoding="utf-8") as f:
         f.write(f"CICLO {ciclo}\n")
@@ -203,32 +240,37 @@ def escrever_saida():
         for i in range(32):
             f.write(f"x{i}: {R[i]}\n")
         f.write("\nMEMÓRIA (hex):\n")
-        for i in range(len(M)):
+        '''for i in range(len(M)):
             if M[i] != 0:
-                f.write(f"{i:03X}: {M[i]:02X}\n")
+                f.write(f"{i:03X}: {M[i]:02X}\n")'''
+        for i in range(0, len(M), 4):  # <-- Loop de 4 em 4 bytes
+            word_bytes = M[i:i + 4]
+            if len(word_bytes) == 4:
+                word_value = int.from_bytes(word_bytes, "little")
+                if word_value != 0:
+                    f.write(f"0x{i:03X}: 0x{word_value:08X}\n")
+
+
         f.write("\n" + "="*40 + "\n")
 
 def avancar_ciclo():
     global ciclo, pipeline, pc
-
     ciclo += 1
 
-    # Executa no estágio EX
+    # executa instrução no estágio EX
     executar_instrucao(pipeline[2])
 
-    # Avança pipeline
+    # avança pipeline
     pipeline[4] = pipeline[3]
     pipeline[3] = pipeline[2]
     pipeline[2] = pipeline[1]
     pipeline[1] = pipeline[0]
-
-    if pc < len(instrucoes):
-        pipeline[0] = instrucoes[pc]
-        pc += 1
-    else:
-        pipeline[0] = None
+    pipeline[0] = instrucoes[pc] if pc < len(instrucoes) else None
+    pc += (pc < len(instrucoes))
 
     atualizar_pipeline_visual()
+    atualizar_registradores_visual()
+    atualizar_memoria_visual()
     escrever_saida()
 
 def pegar_arquivo(event=None):
@@ -254,6 +296,8 @@ def pegar_arquivo(event=None):
         pipeline = [None] * 5
 
         atualizar_pipeline_visual()
+        atualizar_registradores_visual()
+        atualizar_memoria_visual()
         open("saida.out", "w").close()
 
         print(f"Arquivo '{arq}' carregado com {len(instrucoes)} instruções.")
@@ -299,11 +343,11 @@ lblWB = ttk.Label(frame, text="WB")
 lblWB.grid(row=1, column=4)
 
 entry = ttk.Entry(frame)
-entry.grid(row=0, column=1, columnspan=5, sticky="ew")
+entry.grid(row=0, column=1, columnspan=5, sticky="ew", pady=8, padx=8)
 entry.bind("<Return>", pegar_arquivo)
 
 IF = tk.Listbox(frame)
-IF.grid(row=2, column=0, sticky="nsew")
+IF.grid(row=2, column=0, sticky="nse")
 
 ID = tk.Listbox(frame)
 ID.grid(row=2, column=1, sticky="nsew")
@@ -317,7 +361,13 @@ MEM.grid(row=2, column=3, sticky="nsew")
 WB = tk.Listbox(frame)
 WB.grid(row=2, column=4, sticky="nsew")
 
+registers = tk.Listbox(frame)
+registers.grid(row=3, column=0 ,columnspan=3, sticky="nsew", padx=8, pady=8)
+
+memory = tk.Listbox(frame)
+memory.grid(row=3, column=3, columnspan=3, sticky="nsew", pady=8, padx=8)
+
 botao = ttk.Button(frame, text="Avançar ciclo", command=avancar_ciclo)
-botao.grid(row=1, column=5, sticky="ew")
+botao.grid(row=1, column=5, sticky="ew", pady=8, padx=8)
 
 janela.mainloop()
