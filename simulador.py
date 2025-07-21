@@ -189,10 +189,10 @@ def executar_instrucao(instr):
     # tratamento de ecalls
     if op == "ecall":
         syscall = R[17]  # registrador a7
-        if syscall == 5:  # read integer
-            val = int(input("🏷️ Digite um inteiro: "))
+        if syscall == 5:  # lê inteiro
+            val = int(input("Digite um inteiro: "))
             R[10] = val  # coloca em a0
-        elif syscall == 1:  # write integer
+        elif syscall == 1:  # escreve inteiro
             print(f">>> output: {R[10]}")
 
     R[0] = 0  # zero sempre 0
@@ -243,7 +243,7 @@ def escrever_saida():
         '''for i in range(len(M)):
             if M[i] != 0:
                 f.write(f"{i:03X}: {M[i]:02X}\n")'''
-        for i in range(0, len(M), 4):  # <-- Loop de 4 em 4 bytes
+        for i in range(0, len(M), 4):  # loop de 4 em 4 bytes
             word_bytes = M[i:i + 4]
             if len(word_bytes) == 4:
                 word_value = int.from_bytes(word_bytes, "little")
