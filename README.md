@@ -1,4 +1,4 @@
-# Simulador-RISC-V
+# Simulador RISC-V
 
 Como usar:
 
