@@ -13,8 +13,10 @@ def carregar_asm(caminho):
         linhas = arquivo.readlines()
 
     data = {}
+    labels = {}
     ehtexto = False
     ehdata = False
+    cont = 0
 
     for linha in linhas:
         linha = linha.strip()
@@ -40,12 +42,24 @@ def carregar_asm(caminho):
                     valor = resto[len(".asciz"):].strip().strip('"')
                     data[rotulo] = valor
         elif ehtexto:
-            if not linha.endswith(":"):
-                linha = linha.split("#")[0].strip()
-                if linha:
-                    instrucoes.append(linha)
+            linha = linha.split("#")[0].strip()  # Remove comentário na linha
 
-    return instrucoes, data
+            if linha.endswith(":"):  # Caso linha seja só o rótulo
+                rotulo = linha[:-1].strip()
+                labels[rotulo] = cont  # Salva a posição da próxima instrução
+            elif ':' in linha:  # Caso linha tenha rótulo + instrução (ex: "loop: beq ...")
+                rotulo, instr = linha.split(":", 1)
+                rotulo = rotulo.strip()
+                instr = instr.strip()
+                labels[rotulo] = cont
+                if instr:
+                    instrucoes.append(instr)
+                    cont += 1
+            elif linha:
+                instrucoes.append(linha)
+                cont += 1
+    print(labels);
+    return instrucoes, data, labels
 
 def carregar_bin(caminho):
     with open(caminho, 'rb') as arquivo:
@@ -115,9 +129,18 @@ def decodificar(instr):
 
     op = tokens[0]
 
-    if op in ["beq", "bne", "blt", "bge", "bltu", "bgeu"]:
+    if op in ["beq", "bne", "blt", "bge", "bltu", "bgeu", "bgt"]:
         # Usar reg_to_num para rs1 e rs2
-        return {"tipo": "B", "op": op, "rs1": reg_to_num(tokens[1]), "rs2": reg_to_num(tokens[2]), "imm": int(tokens[3])}
+        rs1 = reg_to_num(tokens[1])
+        rs2 = reg_to_num(tokens[2])
+        imm = tokens[3]
+        try:
+            # Tenta converter o immediate direto
+            imm = int(imm)
+            return {"tipo": "B", "op": op, "rs1": rs1, "rs2": rs2, "imm": imm}
+        except ValueError:
+            # Caso não seja um número, assume que é um label
+            return {"tipo": "B", "op": op, "rs1": rs1, "rs2": rs2, "label": imm}
     if op in ["add", "sub", "mul", "div", "rem", "xor", "and", "or", "sll", "srl"]:
         # Usar reg_to_num para rd, rs1 e rs2
         return {"tipo": "R", "op": op, "rd": reg_to_num(tokens[1]), "rs1": reg_to_num(tokens[2]), "rs2": reg_to_num(tokens[3])}
@@ -142,6 +165,10 @@ def decodificar(instr):
         return {"tipo": "LA", "op": "la", "rd": reg_to_num(tokens[1]), "label": tokens[2]}
     elif op == "ecall":
         return {"tipo": "SYS", "op": "ecall"}
+    elif op == "jal":
+        return {"tipo": "J", "op": "jal", "rd": reg_to_num(tokens[1]), "label": tokens[2]}
+    elif op == "j":
+        return {"tipo": "J", "op": "jal", "rd": 0, "label": tokens[1]}
     else:
         return {"tipo": "NOP", "op": "nop"}
 
@@ -265,10 +292,56 @@ def escrever_saida():
 
         f.write("\n" + "="*40 + "\n")
 
+def resolver_destino(instr):
+    if "label" in instr and instr["label"] in labels:
+        return labels[instr["label"]]
+    return pc + instr["imm"]
+
 def avancar_ciclo():
     global ciclo, pipeline, pc
     ciclo += 1
 
+    # Se a instrução no estágio ID for uma branch, não avança o PC
+    #branch
+    if pipeline[1] is not None:
+        instr = decodificar(pipeline[1])
+        if instr["op"] in ["beq", "bne", "blt", "bge", "bltu", "bgeu","bgt"]:
+            #print(f"Branch detectada: {instr['op']} de {instr['rs1']} e {instr['rs2']}")
+            #print(f"Registradores: R[{instr['rs1']}] = {R[instr['rs1']]}, R[{instr['rs2']}] = {R[instr['rs2']]}")
+            if instr["op"] == "beq" and R[instr["rs1"]] == R[instr["rs2"]]:
+                pc = resolver_destino(instr)
+                pipeline[0] = "nop"  # Limpa o estágio IF após branch
+            elif instr["op"] == "bne" and R[instr["rs1"]] != R[instr["rs2"]]:
+                pc = resolver_destino(instr)
+                pipeline[0] = "nop"  # Limpa o estágio IF após branch
+            elif instr["op"] == "blt" and R[instr["rs1"]] < R[instr["rs2"]]:
+                pc = resolver_destino(instr)
+                pipeline[0] = "nop"  # Limpa o estágio IF após branch
+            elif instr["op"] == "bge" and R[instr["rs1"]] >= R[instr["rs2"]]:
+                pc = resolver_destino(instr)
+                pipeline[0] = "nop"  # Limpa o estágio IF após branch
+            elif instr["op"] == "bltu" and (R[instr["rs1"]] & 0xFFFFFFFF) < (R[instr["rs2"]] & 0xFFFFFFFF):
+                pc = resolver_destino(instr)
+                pipeline[0] = "nop"  # Limpa o estágio IF após branch
+            elif instr["op"] == "bgeu" and (R[instr["rs1"]] & 0xFFFFFFFF) >= (R[instr["rs2"]] & 0xFFFFFFFF):
+                pc = resolver_destino(instr)
+                pipeline[0] = "nop"  # Limpa o estágio IF após branch
+            elif instr["op"] == "bgt" and R[instr["rs1"]] > R[instr["rs2"]]:
+                pc = resolver_destino(instr)
+                pipeline[0] = "nop"
+        elif instr["op"] == "jalr":
+            #print(f"JALR detectada: {instr['op']} de {instr['rs1']}")
+            pc = R[instr["rs1"]] + instr["imm"]
+            pipeline[0] = "nop"  # Limpa o estágio IF após branch
+        elif instr["op"] == "jal":
+            #print(f"JAL detectada: {instr['op']} para o rótulo {instr['label']}")
+            pc = resolver_destino(instr)
+            pipeline[0] = "nop"  # Limpa o estágio IF após branch
+        elif instr["op"] == "j":
+            # print(f"J detectada: {instr['op']} para o rótulo {instr['label']}")
+            pc = resolver_destino(instr)
+            pipeline[0] = "nop"  # Limpa o estágio IF após branch
+                    
     # executa instrução no estágio EX
     executar_instrucao(pipeline[2])
 
@@ -286,7 +359,7 @@ def avancar_ciclo():
     escrever_saida()
 
 def pegar_arquivo(event=None):
-    global instrucoes, pipeline, R, M, ciclo, pc, data
+    global instrucoes, pipeline, R, M, ciclo, pc, data,labels
 
     arq = entry.get()
     if not arq:
@@ -294,7 +367,7 @@ def pegar_arquivo(event=None):
 
     try:
         if arq.endswith(".asm"):
-            instrucoes, data = carregar_asm(arq)
+            instrucoes, data, labels = carregar_asm(arq)
         elif arq.endswith(".bin"):
             instrucoes = carregar_bin(arq)
         else:
