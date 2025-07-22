@@ -12,19 +12,40 @@ def carregar_asm(caminho):
     with open(caminho, 'r', encoding='utf-8') as arquivo:
         linhas = arquivo.readlines()
 
-    lista = []
-    carregando = False
+    data = {}
+    ehtexto = False
+    ehdata = False
+
     for linha in linhas:
         linha = linha.strip()
-        if linha == ".text":
-            carregando = True
+        if linha == "" or linha.startswith("#"):
             continue
-        if not carregando:
+
+        if linha == ".data":
+            ehdata = True
+            ehtexto = False
             continue
-        if linha == "" or linha.startswith("#") or linha.endswith(":"):
+
+        elif linha == ".text":
+            ehtexto = True
+            ehdata = False
             continue
-        lista.append(linha)
-    return lista
+
+        if ehdata:
+            if ':' in linha:
+                rotulo, resto = linha.split(":", 1)
+                rotulo = rotulo.strip()
+                resto = resto.strip()
+                if resto.startswith(".asciz"):
+                    valor = resto[len(".asciz"):].strip().strip('"')
+                    data[rotulo] = valor
+        elif ehtexto:
+            if not linha.endswith(":"):
+                linha = linha.split("#")[0].strip()
+                if linha:
+                    instrucoes.append(linha)
+
+    return instrucoes, data
 
 def carregar_bin(caminho):
     with open(caminho, 'rb') as arquivo:
@@ -85,57 +106,40 @@ def reg_to_num(reg):
         raise ValueError(f"Registrador desconhecido: {reg}")
 
 def decodificar(instr):
-    if not instr:  # Se for None ou string vazia
+    if not instr:
         return {"tipo": "NOP", "op": "nop"}
 
     tokens = instr.replace(",", "").replace("(", " ").replace(")", "").split()
-    if not tokens:  # Se a linha se tornou vazia após replace/split
+    if not tokens:
         return {"tipo": "NOP", "op": "nop"}
 
     op = tokens[0]
 
+    if op in ["beq", "bne", "blt", "bge", "bltu", "bgeu"]:
+        # Usar reg_to_num para rs1 e rs2
+        return {"tipo": "B", "op": op, "rs1": reg_to_num(tokens[1]), "rs2": reg_to_num(tokens[2]), "imm": int(tokens[3])}
     if op in ["add", "sub", "mul", "div", "rem", "xor", "and", "or", "sll", "srl"]:
-        return {"tipo": "R", "op": op, "rd": int(tokens[1][1:]), "rs1": int(tokens[2][1:]), "rs2": int(tokens[3][1:])}
+        # Usar reg_to_num para rd, rs1 e rs2
+        return {"tipo": "R", "op": op, "rd": reg_to_num(tokens[1]), "rs1": reg_to_num(tokens[2]), "rs2": reg_to_num(tokens[3])}
     elif op in ["addi", "jalr"]:
-        return {"tipo": "I", "op": op, "rd": int(tokens[1][1:]), "rs1": int(tokens[2][1:]), "imm": int(tokens[3])}
+        # Usar reg_to_num para rd e rs1
+        return {"tipo": "I", "op": op, "rd": reg_to_num(tokens[1]), "rs1": reg_to_num(tokens[2]), "imm": int(tokens[3])}
     elif op == "lw":
-        return {"tipo": "I", "op": op, "rd": int(tokens[1][1:]), "imm": int(tokens[2]), "rs1": int(tokens[3][1:])}
+        # Usar reg_to_num para rd e rs1
+        return {"tipo": "I", "op": op, "rd": reg_to_num(tokens[1]), "imm": int(tokens[2]), "rs1": reg_to_num(tokens[3])}
     elif op == "sw":
-        return {"tipo": "S", "op": op, "rs2": int(tokens[1][1:]), "imm": int(tokens[2]), "rs1": int(tokens[3][1:])}
-    elif op == "li":  # li rd, imm -> addi rd, x0, imm
-        return {
-            "tipo": "I",
-            "op": "addi",
-            "rd": reg_to_num(tokens[1]),
-            "rs1": 0,
-            "imm": int(tokens[2])
-        }
-    elif op == "mv":  # mv rd, rs -> addi rd, rs, 0
-        return {
-            "tipo": "I",
-            "op": "addi",
-            "rd": reg_to_num(tokens[1]),
-            "rs1": reg_to_num(tokens[2]),
-            "imm": 0
-        }
-    elif op == "nop":  # nop -> addi x0, x0, 0
-        return {
-            "tipo": "I",
-            "op": "addi",
-            "rd": 0,
-            "rs1": 0,
-            "imm": 0
-        }
-    elif op == "ret":  # ret -> jalr x0, x1, 0
-        return {
-            "tipo": "I",
-            "op": "jalr",
-            "rd": 0,
-            "rs1": 1,
-            "imm": 0
-        }
-    elif op == "la":  # la rd, symbol -> simplificado como nop (precisa mais implementação)
-        return {"tipo": "NOP", "op": "nop"}
+        # Usar reg_to_num para rs2 e rs1
+        return {"tipo": "S", "op": op, "rs2": reg_to_num(tokens[1]), "imm": int(tokens[2]), "rs1": reg_to_num(tokens[3])}
+    elif op == "li":
+        return {"tipo": "I", "op": "addi", "rd": reg_to_num(tokens[1]), "rs1": 0, "imm": int(tokens[2])}
+    elif op == "mv":
+        return {"tipo": "I", "op": "addi", "rd": reg_to_num(tokens[1]), "rs1": reg_to_num(tokens[2]), "imm": 0}
+    elif op == "nop":
+        return {"tipo": "I", "op": "addi", "rd": 0, "rs1": 0, "imm": 0}
+    elif op == "ret":
+        return {"tipo": "I", "op": "jalr", "rd": 0, "rs1": 1, "imm": 0}
+    elif op == "la":
+        return {"tipo": "LA", "op": "la", "rd": reg_to_num(tokens[1]), "label": tokens[2]}
     elif op == "ecall":
         return {"tipo": "SYS", "op": "ecall"}
     else:
@@ -186,14 +190,22 @@ def executar_instrucao(instr):
         val = R[info["rs2"]]
         M[addr:addr + 4] = val.to_bytes(4, "little")
 
-    # tratamento de ecalls
+    elif op == "la":
+        label = info["label"]
+        R[info["rd"]] = data.get(label, 0)
+
     if op == "ecall":
-        syscall = R[17]  # registrador a7
-        if syscall == 5:  # lê inteiro
-            val = int(input("Digite um inteiro: "))
-            R[10] = val  # coloca em a0
-        elif syscall == 1:  # escreve inteiro
-            print(f">>> output: {R[10]}")
+        syscall = R[17]  # a7
+
+        if syscall == 1:
+            print(R[10])
+
+        elif syscall == 4:
+            print(R[10], end='')
+            R[10] = 0
+
+        elif syscall == 5:
+            R[10] = int(input())
 
     R[0] = 0  # zero sempre 0
 
@@ -243,7 +255,7 @@ def escrever_saida():
         '''for i in range(len(M)):
             if M[i] != 0:
                 f.write(f"{i:03X}: {M[i]:02X}\n")'''
-        for i in range(0, len(M), 4):  # loop de 4 em 4 bytes
+        for i in range(0, len(M), 4):  # <-- Loop de 4 em 4 bytes
             word_bytes = M[i:i + 4]
             if len(word_bytes) == 4:
                 word_value = int.from_bytes(word_bytes, "little")
@@ -274,7 +286,7 @@ def avancar_ciclo():
     escrever_saida()
 
 def pegar_arquivo(event=None):
-    global instrucoes, pipeline, R, M, ciclo, pc
+    global instrucoes, pipeline, R, M, ciclo, pc, data
 
     arq = entry.get()
     if not arq:
@@ -282,7 +294,7 @@ def pegar_arquivo(event=None):
 
     try:
         if arq.endswith(".asm"):
-            instrucoes = carregar_asm(arq)
+            instrucoes, data = carregar_asm(arq)
         elif arq.endswith(".bin"):
             instrucoes = carregar_bin(arq)
         else:
@@ -371,3 +383,4 @@ botao = ttk.Button(frame, text="Avançar ciclo", command=avancar_ciclo)
 botao.grid(row=1, column=5, sticky="ew", pady=8, padx=8)
 
 janela.mainloop()
+
